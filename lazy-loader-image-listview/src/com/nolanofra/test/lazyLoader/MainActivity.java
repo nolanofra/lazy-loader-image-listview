@@ -12,6 +12,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ * 
  */
 
 package com.nolanofra.test.lazyLoader;
@@ -38,16 +39,18 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 
-import android.app.Activity;
+import android.app.ListActivity;
 import android.graphics.Bitmap;
+import android.os.AsyncTask;
 import android.os.Bundle;
-import android.widget.ListView;
+import android.util.Log;
 
-public class MainActivity extends Activity{
+public class MainActivity extends ListActivity{
 
 	public Bitmap placeholder;
 	
 	VideosArrayAdapter videoArrayAdapter;
+	ArrayList<Video> videos;
 	
 	@Override
     public void onCreate(Bundle savedInstanceState) {
@@ -55,12 +58,12 @@ public class MainActivity extends Activity{
         
         setContentView(R.layout.main);
         
-        ArrayList<Video> videos = getVideos ("http://gdata.youtube.com/feeds/api/playlists/50653251EDB4E764?v=2&alt=jsonc&start-index=1&max-results=50");
-                      
-        ListView listView = (ListView) findViewById(R.id.ListViewId);
-        
+        //ArrayList<Video> videos = getVideos ("https://gdata.youtube.com/feeds/api/users/radiobocconi/favorites?alt=jsonc&v=2&orderby=updated");
+        new VideosAsyncTask().execute("https://gdata.youtube.com/feeds/api/users/bocconitv/favorites?alt=jsonc&v=2&orderby=updated");      
+                    
+        videos = new ArrayList<Video>();
         videoArrayAdapter = new VideosArrayAdapter(this, R.layout.list_item, videos);
-        listView.setAdapter(videoArrayAdapter);  
+        setListAdapter(videoArrayAdapter);  
 	}
 	
 	@Override
@@ -71,7 +74,33 @@ public class MainActivity extends Activity{
 			videoArrayAdapter.clearCacheImageManager();
 	}
 	
-	public ArrayList<Video> getVideos (String url)
+	private class VideosAsyncTask extends AsyncTask <String, Void, Void>
+	{
+		@Override
+		protected Void doInBackground(String... urls) {
+			
+			for (String url : urls)
+				videos = getVideos(url);
+					
+			return null;
+		}
+		
+		@Override
+		protected void onPostExecute(Void x)
+		{
+			if (videos != null && !videos.isEmpty())
+			{
+				videoArrayAdapter.clear();
+								
+				for (Video v : videos)
+					videoArrayAdapter.add(v);
+				
+				videoArrayAdapter.notifyDataSetChanged();							
+			}
+		}
+	}
+	
+	private ArrayList<Video> getVideos (String url)
 	{
 		ArrayList<Video> videos = new ArrayList<Video>();
 		
@@ -104,18 +133,23 @@ public class MainActivity extends Activity{
 				JSONObject videoRoot= itemsArray.getJSONObject(i);
 				JSONObject video = videoRoot.getJSONObject("video");
 				Video v = new Video();
-				v.title = data.getString("title");
-				v.description = data.getString("description");
-				
-				JSONObject thumbnail =  video.getJSONObject("thumbnail");
-				v.thumbnailHQDefault = thumbnail.getString("hqDefault");
-				v.thumbnailSQDefault = thumbnail.getString("sqDefault");
+				v.title = video.getString("title");
+				if (!video.isNull("description"))
+					v.description = video.getString("description");
+				if (!video.isNull("thumbnail"))
+				{
+					JSONObject thumbnail =  video.getJSONObject("thumbnail");
+					v.thumbnailHQDefault = thumbnail.getString("hqDefault");
+					v.thumbnailSQDefault = thumbnail.getString("sqDefault");
+				}
 				
 				videos.add(v);
 			}					
 		}
 		catch (Exception e)
-		{}		
+		{
+			Log.d("error", e.getMessage());
+		}		
 		
 		
 		return videos;
