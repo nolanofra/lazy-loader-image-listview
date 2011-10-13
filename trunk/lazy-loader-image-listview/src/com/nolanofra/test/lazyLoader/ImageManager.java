@@ -41,8 +41,15 @@ import android.widget.ImageView;
 
 public class ImageManager {
 	
+	private enum CacheTypeEnum
+	{
+		ExternalStorage, 
+		InternalStorage
+	}
+	
 	//Max cache dir size, in Bytes
-	private final long MAX_CACHE_DIR_SIZE = 1500000; //1,5 MB
+	private final long MAX_CACHE_INTERNAL_DIR_SIZE = 1500000; //1,5 MB
+	private final long MAX_CACHE_EXTERNAL_DIR_SIZE = 3000000; //3 MB
 	
 	
 	// Just using a hashmap for the cache. SoftReferences would 
@@ -50,6 +57,8 @@ public class ImageManager {
 	private HashMap<String, Bitmap> imageMap = new HashMap<String, Bitmap>();
 	
 	private File cacheDir;
+	private CacheTypeEnum cacheType;
+	
 	private ImageQueue imageQueue = new ImageQueue();
 	private Thread imageLoaderThread = new Thread(new ImageQueueManager());
 	
@@ -62,10 +71,14 @@ public class ImageManager {
 		Log.d("sdState: ", sdState);
 		if (sdState.equals(android.os.Environment.MEDIA_MOUNTED)) {
 			cacheDir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES);
+			cacheType = CacheTypeEnum.ExternalStorage;
 			Log.d("cacheDir: ", cacheDir.getAbsolutePath());		
 		}
 		else
+		{
 			cacheDir = context.getCacheDir();
+			cacheType = CacheTypeEnum.InternalStorage;
+		}
 		
 		if(!cacheDir.exists())
 			cacheDir.mkdirs();
@@ -261,6 +274,17 @@ public class ImageManager {
 	
 	private class ClearCacheManager implements Runnable
 	{
+		
+		private long sizeCacheDir;
+		private long maxSizeCache;
+		
+		public ClearCacheManager (long _sizeCacheDir, long _maxSizeCache)
+		{			
+			this.sizeCacheDir = _sizeCacheDir;
+			this.maxSizeCache = _maxSizeCache;
+		}
+		
+		
 		@Override
 		public void run() {
 			try
@@ -276,37 +300,47 @@ public class ImageManager {
 	                }
 	            });
 	        	
-	            int index = 0;
-	            while (MyLibrary.dirSize(cacheDir) > MAX_CACHE_DIR_SIZE)
-	            {
-	            	files[index].delete();
+	            int index = 0;	            
+	            while (this.sizeCacheDir > this.maxSizeCache)
+	            {	            	
+	            	this.sizeCacheDir -= files[index].length();
+	            	files[index].delete();	            	
 	            	index ++;
 	            }					        
 			}
 			catch (SecurityException e) {} 
 		}
 	}
-			
+		
+	/**
+	 * if cache directory size is greater than:
+	 * 1,5 MB (CASE INTERNAL STORAGE)
+	 * 3 MB (CASE EXTERNAL STORAGE, SD CARD i.e.)
+	 *  => I'll delete oldest file, until reaching cache dir maximum size
+	 */
 	public void clearCache() {
         //clear memory cache
 		imageMap.clear();
 		//interrupt thread
         imageLoaderThread.interrupt();
-        //clear SD cache
         
-        Log.d("cache dir size is:  ", Long.toString(MyLibrary.dirSize(cacheDir)));
         
-        /*if cache directory size is greater than 1,5 MB => i'll delete oldest file, until reaching cache dir maximum size*/
-        if (MyLibrary.dirSize(cacheDir) > MAX_CACHE_DIR_SIZE)
-        	new Thread(new ClearCacheManager()).start();                     
+        //clearing cache dir                
+        long sizeCacheDir = MyLibrary.dirSize(cacheDir); 
+        long maxSizeCacheDir = (cacheType == CacheTypeEnum.ExternalStorage ? MAX_CACHE_EXTERNAL_DIR_SIZE : MAX_CACHE_INTERNAL_DIR_SIZE);
+        
+        /*if cache directory size is greater than:
+         *  1,5 MB (CASE INTERNAL STORAGE) 
+         *  3 MB (CASE EXTERNAL STORAGE) 
+         *  => I'll delete oldest file, until reaching cache dir maximum size*/
+        if (sizeCacheDir > maxSizeCacheDir)
+        	new Thread(new ClearCacheManager(sizeCacheDir, maxSizeCacheDir)).start();                     
     }
 	
 	/**
 	 * seems there was some problem with the stream and the way android handled it.
 	 * More information can be found ad: http://code.google.com/p/android/issues/detail?id=6066
 	 * android bug n°6066
-	 * @author f.nolano
-	 *
 	 */
 	static class FlushedInputStream extends FilterInputStream {
 	    public FlushedInputStream(InputStream inputStream) {
